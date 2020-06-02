@@ -1,22 +1,33 @@
 defmodule LetItGo.KafkaWriter do
   use GenServer
 
+  def write(messages) do
+    GenServer.cast(__MODULE__, {:write, messages})
+  end
+
   def start_link(_args \\ []) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
   def init(_opts) do
-    with kafka <- Application.get_env(:let_it_go, :kafka, localhost: 9092),
+    with conn <- :let_it_go_writer,
+         topic <- "let-it-go-topic",
+         kafka <- Application.get_env(:let_it_go, :kafka, localhost: 9092),
          {:ok, pid} <-
            Elsa.Supervisor.start_link(
-             connection: :let_it_go_writer,
+             connection: conn,
              endpoints: kafka,
              producer: [
-               topic: "let-it-go-topic"
+               topic: topic
              ]
            ),
-         true <- Elsa.Producer.ready?(:let_it_go_writer) do
-      {:ok, pid}
+         true <- Elsa.Producer.ready?(conn) do
+      {:ok, %{pid: pid, conn: conn, topic: topic}}
     end
+  end
+
+  def handle_cast({:write, messages}, state) do
+    Elsa.produce(state.conn, state.topic, List.wrap(messages))
+    {:noreply, state}
   end
 end
